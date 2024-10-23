@@ -1,198 +1,323 @@
 const express = require('express');
-const bodyParser = require('body-parser');
-const jwt = require('jsonwebtoken');
-const Bull = require('bull');
-const puppeteer = require('puppeteer');
-const fs = require('fs');
 const multer = require('multer');
+const puppeteer = require('puppeteer');
 const path = require('path');
-require('dotenv').config();  // Load environment variables from .env
 
 const app = express();
-app.use(bodyParser.json());
+const port = process.env.PORT || 3000;
 
-// Queue for managing video creation tasks
-const videoQueue = new Bull('video-queue');
+let browser = null;
+let page = null;
+let isLoggedIn = false;
+let requestQueue = [];
 
-// Load credentials from .env
-const { RUNWAYML_EMAIL, RUNWAYML_PASSWORD, SECRET_KEY } = process.env;
-
-// Middleware for API key authentication
-const authenticateAPIKey = (req, res, next) => {
-    const token = req.headers['x-api-key'];
-    if (!token) {
-        return res.status(403).send({ message: 'No API key provided' });
-    }
-
-    jwt.verify(token, SECRET_KEY, (err) => {
-        if (err) {
-            return res.status(403).send({ message: 'Failed to authenticate API key' });
-        }
-        next();
-    });
-};
-
-// Endpoint to generate a JWT API key (for testing)
-app.post('/generate-key', (req, res) => {
-    const token = jwt.sign({}, SECRET_KEY, { expiresIn: '1h' });
-    res.json({ apiKey: token });
-});
-
-const upload = multer({
-    dest: 'uploads/', // You can specify the destination directory
-});
-
-// API route to handle video creation request
-app.post('/create-video', upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), async (req, res) => {
-    const { engine, prompt } = req.body;
-    const firstFrame = req.files.firstFrame[0].path;
-    const lastFrame = req.files.lastFrame[0].path;
-
-    console.log('Received first frame:', firstFrame);
-    console.log('Received last frame:', lastFrame);
-    console.log('Engine:', engine);
-    console.log('Prompt:', prompt);
-
-    try {
-        // Enqueue the video creation job
-        console.log('before create job');
-        const job = await videoQueue.add({
-            firstFrame,
-            lastFrame,
-            engine,
-            prompt,
-        });
-        console.log('aftercreaetjob');
-        console.log(job);
-
-        return res.status(200).json({
-            message: 'Video creation job enqueued successfully',
-            jobId: job.id,
-        });
-    } catch (error) {
-        return res.status(500).json({ message: 'Failed to enqueue video creation job', error });
+// Multer setup for file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, 'uploads/');
+    },
+    filename: function (req, file, cb) {
+        const originalName = file.originalname;
+        const extension = path.extname(originalName);
+        const baseName = path.basename(originalName, extension);
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, `${baseName}-${uniqueSuffix}${extension}`);
     }
 });
+const upload = multer({ storage });
 
-// Worker to process the queue and send requests to RunwayML via Puppeteer
-videoQueue.process(async (job) => {
-    const { firstFrame, lastFrame, engine, prompt } = job.data;
-    console.log('Processing video creation for job:', job.id);
+async function launchBrowser() {
+    console.log('Launching browser...');
+    browser = await puppeteer.launch({ headless: false });
+    page = await browser.newPage();
+    page.setDefaultTimeout(600000);
+}
 
-    // Login and send video creation request to RunwayML
-    const taskId = await createVideoOnRunwayML(firstFrame, lastFrame, engine, prompt);
-
-    if (taskId) {
-        console.log(`Task ID for job ${job.id}: ${taskId}`);
-
-        // Poll for video readiness and fetch the final video URL
-        const videoUrl = await fetchVideoOnceReady(taskId);
-        return { videoUrl };
-    } else {
-        throw new Error('Failed to create video on RunwayML');
-    }
-});
-
-videoQueue.on('completed', (job, result) => {
-    console.log(`Job completed: ${job.id}, result:`, result);
-});
-
-videoQueue.on('failed', (job, err) => {
-    console.error(`Job failed: ${job.id}, error:`, err);
-});
-
-videoQueue.on('error', (error) => {
-    console.error('Queue error:', error);
-});
-
-// Function to log in to RunwayML using Puppeteer
-async function loginToRunwayML(page) {
-    console.log('Logging in to RunwayML...');
+async function login(page) {
+    console.log('Navigating to login page...');
     await page.goto('https://app.runwayml.com/login');
-
-    await page.type('input[name="usernameOrEmail"]', RUNWAYML_EMAIL);
-    await page.type('input[name="password"]', RUNWAYML_PASSWORD);
-
-    // Click login and wait for navigation
+    console.log('Typing username and password...');
+    await page.type('input[name="usernameOrEmail"]', 'rafael@epicmegacorp.com'); // Replace with your email
+    await page.type('input[name="password"]', 'KEW.qrv_aku6wxp!qaw'); // Replace with your password
     await page.click('button[type="submit"]');
-    await page.waitForNavigation();
-
-    // Save session cookies after login
-    const cookies = await page.cookies();
-    fs.writeFileSync('cookies.json', JSON.stringify(cookies));
-
-    console.log('Logged in and session cookies saved');
+    console.log('Logging in...');
+    await page.waitForNavigation({ waitUntil: 'networkidle2' });
+    console.log('Login successful!');
+    isLoggedIn = true; // Mark as logged in after first login
 }
 
-// Function to load session cookies
-async function loadSessionCookies(page) {
-    const cookies = JSON.parse(fs.readFileSync('cookies.json', 'utf8'));
-    await page.setCookie(...cookies);
+async function uploadFrame(page, inputSelector, filePath) {
+    console.log(`Uploading frame from ${filePath}...`);
+    const inputFrame = await page.waitForSelector(inputSelector, { visible: false, timeout: 600000 });
+    await page.evaluate((input) => {
+        input.style.display = 'block';
+    }, inputFrame);
+    await inputFrame.uploadFile(filePath);
+    console.log('Frame uploaded successfully!');
 }
 
-// Function to create a video on RunwayML
-async function createVideoOnRunwayML(firstFrame, lastFrame, engine, prompt) {
-    const browser = await puppeteer.launch({ headless: true });
-    const page = await browser.newPage();
-
-    // Try to load session cookies (reuse existing session)
-    if (fs.existsSync('cookies.json')) {
-        await loadSessionCookies(page);
-        await page.goto('https://runwayml.com/studio');
-    } else {
-        // Log in if no session exists
-        await loginToRunwayML(page);
-    }
-
-    // Upload first frame, last frame, and set prompt/engine
-    const firstFrameInput = await page.$('input#first-frame');
-    await firstFrameInput.uploadFile(firstFrame);
-
-    const lastFrameInput = await page.$('input#last-frame');
-    await lastFrameInput.uploadFile(lastFrame);
-
-    await page.select('#engine-selector', engine);
-    await page.type('#prompt-input', prompt);
-
-    // Submit and get task ID
-    await page.click('#submit-button');
-    await page.waitForSelector('#task-id');
-
-    const taskId = await page.evaluate(() => {
-        return document.querySelector('#task-id').innerText;
+async function clickCropButton(page) {
+    console.log('Waiting for image to appear...');
+    await page.waitForSelector('div.advanced-cropper-draggable-element.advanced-cropper-rectangle-stencil__draggable-area', { visible: true });
+    console.log('Image appeared, clicking Crop button...');
+    await page.evaluate(() => {
+        const cropButton = Array.from(document.querySelectorAll('span')).find(el => el.textContent.trim() === 'Crop');
+        if (cropButton) {
+            cropButton.click();
+            console.log('Crop button clicked');
+        } else {
+            console.log('Crop button not found');
+        }
     });
-
-    await browser.close();
-    return taskId;
 }
 
-// Function to poll RunwayML and fetch video when ready
-async function fetchVideoOnceReady(taskId) {
-    const browser = await puppeteer.launch({ headless: true });
-    const page = await browser.newPage();
+async function clickLastButton(page) {
+    console.log('Waiting for "+ Last" button...');
+    await page.waitForFunction(() => {
+        return Array.from(document.querySelectorAll('button')).some(el => el.textContent.includes('Last'));
+    }, { timeout: 600000 });
 
-    // Go to the task status page
-    await page.goto(`https://runwayml.com/tasks/${taskId}`);
+    console.log('Clicking "+ Last" button...');
+    await page.evaluate(() => {
+        const lastButton = Array.from(document.querySelectorAll('button')).find(el => el.textContent.includes('Last'));
+        if (lastButton) {
+            lastButton.click();
+            console.log('+ Last button clicked');
+        } else {
+            console.log('+ Last button not found');
+        }
+    });
+}
 
-    while (true) {
-        const status = await page.evaluate(() => {
-            return document.querySelector('#status').innerText;
+async function enterTextPrompt(page, promptText) {
+    console.log('Waiting for text prompt input...');
+    await page.waitForSelector('div[contenteditable="true"][aria-label="Text Prompt Input"]', { visible: true });
+    console.log('Clicking text prompt input...');
+    await page.click('div[contenteditable="true"][aria-label="Text Prompt Input"]');
+    console.log(`Typing text prompt: ${promptText}...`);
+    await page.keyboard.type(promptText);
+    console.log('Text prompt entered!');
+}
+
+async function clickGenerateButton(page) {
+    console.log('Clicking Generate button...');
+    await page.evaluate(() => {
+        const generateButton = Array.from(document.querySelectorAll('span')).find(el => el.textContent.trim() === 'Generate');
+        if (generateButton) {
+            generateButton.click();
+            console.log('Generate button clicked');
+        } else {
+            console.log('Generate button not found');
+        }
+    });
+}
+
+async function waitForVideoAndLogSrc(page) {
+    console.log('Waiting for video to appear...');
+
+    let videoAppeared = false;
+    let queueMessageAppeared = false;
+    let readyToGenerateAppeared = false;
+    const maxWaitTime = 1200000; // 20 minutes
+    const checkInterval = 5000; // Check every 5 seconds
+    let elapsedTime = 0;
+    let queueMessageStartTime = null;
+    const queueMessageTimeout = 300000; // 5 minutes
+
+    while (!videoAppeared && elapsedTime < maxWaitTime) {
+        // Check if the video element is present
+        videoAppeared = await page.evaluate(() => {
+            const videoElement = document.querySelector('video');
+            return !!videoElement; // Check if the video element exists
         });
 
-        if (status === 'completed') {
-            const videoUrl = await page.evaluate(() => {
-                return document.querySelector('#video-url').getAttribute('href');
+        // Check if the queue message is present
+        queueMessageAppeared = await page.evaluate(() => {
+            const queueMessageElement = Array.from(document.querySelectorAll('span')).find(
+                el => el.textContent.trim() === "Your video is in queue and will start in a few minutes."
+            );
+            return !!queueMessageElement;
+        });
+
+        // Check if the "You're ready to generate." message is present
+        if (!readyToGenerateAppeared) {
+            readyToGenerateAppeared = await page.evaluate(() => {
+                const readyMessageElement = Array.from(document.querySelectorAll('span')).find(
+                    el => el.textContent.trim() === "You're ready to generate."
+                );
+                return !!readyMessageElement;
             });
-            await browser.close();
-            return videoUrl;
+
+            if (readyToGenerateAppeared) {
+                console.log('"You\'re ready to generate." message appeared. Clicking Generate button once...');
+                await clickGenerateButton(page); // Click the Generate button only once
+            }
         }
 
-        // Wait for 5 seconds before polling again
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        if (queueMessageAppeared) {
+            if (!queueMessageStartTime) {
+                // Record the time when the queue message first appears
+                queueMessageStartTime = elapsedTime;
+                console.log('Queue message appeared. Tracking time...');
+            } else if (elapsedTime - queueMessageStartTime > queueMessageTimeout) {
+                // If the queue message has been visible for more than 5 minutes
+                console.log('Queue message has been visible for more than 5 minutes. Clicking Generate again...');
+                await clickGenerateButton(page);
+                queueMessageStartTime = elapsedTime; // Reset the timer
+            }
+        } else {
+            // Reset queue message tracking if it's not visible anymore
+            queueMessageStartTime = null;
+        }
+
+        if (!videoAppeared) {
+            console.log('Video not appeared yet. Waiting...');
+            await new Promise(resolve => setTimeout(resolve, checkInterval));
+            elapsedTime += checkInterval;
+        }
+    }
+
+    if (!videoAppeared) {
+        throw new Error('Video element did not appear within the expected time');
+    }
+
+    console.log('Video appeared! Fetching video src...');
+    const videoSourceSrc = await page.evaluate(() => {
+        const videoElement = document.querySelector('video');
+        const sourceElement = videoElement ? videoElement.querySelector('source') : null;
+        return sourceElement ? sourceElement.src : 'Source element not found';
+    });
+
+    return videoSourceSrc;
+}
+
+
+
+async function changeModel(page, type) {
+    console.log('Changing model...');
+
+    // Navigate to the model selection page
+    await page.goto('https://app.runwayml.com/video-tools/teams/rafael788/ai-tools/generative-video', { waitUntil: 'networkidle2' });
+    await page.waitForSelector('button[data-testid="select-base-model"]', { visible: true });
+
+    console.log('Clicking model selector button...');
+    await page.click('button[data-testid="select-base-model"]');
+
+    // Wait for the menu items to appear
+    await page.waitForSelector('div[role="menuitem"]', { visible: true });
+
+    let modelName;
+    if (type === 'gen3_turbo') {
+        modelName = 'Gen-3 Alpha Turbo';
+    } else if (type === 'gen3') {
+        modelName = 'Gen-3 Alpha';
+    } else {
+        throw new Error(`Unknown model type: ${type}`);
+    }
+
+    console.log(`Selecting model: ${modelName}...`);
+    await page.evaluate((modelName) => {
+        const menuItem = Array.from(document.querySelectorAll('div[role="menuitem"]')).find(
+            el => el.textContent.includes(modelName)
+        );
+        if (menuItem) {
+            menuItem.click();
+            console.log(`${modelName} model selected!`);
+        } else {
+            console.log(`Model ${modelName} not found.`);
+        }
+    }, modelName);
+
+    console.log('Model changed!');
+}
+
+// Puppeteer logic in a function
+async function generateVideo(firstFramePath, lastFramePath, engine, prompt) {
+
+    // Navigate to the Generative Video tool (skipping login)
+    // await navigateToGenerativeVideo(page);
+
+    await changeModel(page, engine);
+
+    // Continue with video generation steps...
+    console.log(firstFramePath, lastFramePath);
+    await uploadFrame(page, 'input[type="file"]', firstFramePath);
+    await clickCropButton(page);
+    await clickLastButton(page);
+    await uploadFrame(page, 'input[type="file"]', lastFramePath);
+    await clickCropButton(page);
+    await enterTextPrompt(page, prompt);
+    await clickGenerateButton(page);
+    const videoSrc = await waitForVideoAndLogSrc(page);
+    console.log('All steps completed successfully!');
+
+    return videoSrc;
+}
+
+// Queue processing
+function processQueue() {
+    if (requestQueue.length > 0) {
+        const { firstFramePath, lastFramePath,engine, prompt, res } = requestQueue[0]; // Get the first job without removing it
+        generateVideo(firstFramePath, lastFramePath, engine, prompt)
+            .then(videoSrc => {
+                res.json({ videoSrc });
+                requestQueue.shift(); // Remove the job after completion
+                processQueue(); // Move to next request after completion
+            })
+            .catch(error => {
+                console.error('Error creating video:', error);
+                res.status(500).json({ error: 'Failed to generate video' });
+                requestQueue.shift(); // Remove the job even if it failed
+                processQueue(); // Move to next request even on error
+            });
     }
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+
+// API to handle video creation
+app.post('/create-video', upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), (req, res) => {
+    const { engine, prompt } = req.body;
+    const firstFramePath = req.files['firstFrame'][0].path;
+    const lastFramePath = req.files['lastFrame'][0].path;
+
+    requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, res });
+    console.log('requestlength', requestQueue.length);
+    if (requestQueue.length === 1) {
+        processQueue(); // Start processing immediately if it's the only request
+    }
+});
+
+// New endpoint to reset the project
+app.post('/reset-project', async (req, res) => {
+    try {
+        // Close browser if open
+        if (browser) {
+            console.log('Closing browser...');
+            await browser.close();
+            browser = null;
+            page = null;
+            isLoggedIn = false;
+        }
+
+        // Clear the request queue
+        requestQueue = [];
+        console.log('Request queue cleared.');
+        res.json({ message: 'Project reset successfully' });
+    } catch (error) {
+        console.error('Error resetting project:', error);
+        res.status(500).json({ error: 'Failed to reset project' });
+    }
+});
+
+// Start the server
+app.listen(port, async () => {
+    console.log(`Server is running on port ${port}`);
+    if (!browser || !page) {
+        await launchBrowser();
+    }
+
+    // Perform login if not already logged in
+    if (!isLoggedIn) {
+        await login(page);
+    }
 });
