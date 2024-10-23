@@ -30,7 +30,7 @@ const upload = multer({ storage });
 async function launchBrowser() {
     console.log('Launching browser...');
     const browser = await puppeteer.launch({
-        headless: true,
+        headless: false,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process', '--no-zygote'], // Required for restricted environments
     });
     page = await browser.newPage();
@@ -279,6 +279,7 @@ function processQueue() {
 
 // API to handle video creation
 app.post('/create-video', upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), (req, res) => {
+    console.log('adfadf');
     const { engine, prompt } = req.body;
     const firstFramePath = req.files['firstFrame'][0].path;
     const lastFramePath = req.files['lastFrame'][0].path;
@@ -313,14 +314,14 @@ app.post('/reset-project', async (req, res) => {
 });
 
 // Start the server
-app.listen(port, async () => {
+app.listen(port,'0.0.0.0', async () => {
     console.log(`Server is running on port ${port}`);
     if (!browser || !page) {
-        await launchBrowser();
+   //     await launchBrowser();
     }
 
     // Perform login if not already logged in
     if (!isLoggedIn) {
-        await login(page);
+    //    await login(page);
     }
 });
