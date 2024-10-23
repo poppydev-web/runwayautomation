@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const puppeteer = require('puppeteer');
 const path = require('path');
+require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -28,7 +29,7 @@ const upload = multer({ storage });
 
 async function launchBrowser() {
     console.log('Launching browser...');
-    browser = await puppeteer.launch({ headless: false });
+    browser = await puppeteer.launch({ headless: true });
     page = await browser.newPage();
     page.setDefaultTimeout(600000);
 }
@@ -37,8 +38,8 @@ async function login(page) {
     console.log('Navigating to login page...');
     await page.goto('https://app.runwayml.com/login');
     console.log('Typing username and password...');
-    await page.type('input[name="usernameOrEmail"]', 'rafael@epicmegacorp.com'); // Replace with your email
-    await page.type('input[name="password"]', 'KEW.qrv_aku6wxp!qaw'); // Replace with your password
+    await page.type('input[name="usernameOrEmail"]', process.env.RUNWAYML_EMAIL); // Replace with your email
+    await page.type('input[name="password"]', process.env.RUNWAYML_PASSWORD); // Replace with your password
     await page.click('button[type="submit"]');
     console.log('Logging in...');
     await page.waitForNavigation({ waitUntil: 'networkidle2' });
