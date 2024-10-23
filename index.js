@@ -30,6 +30,9 @@ const upload = multer({ storage });
 async function launchBrowser() {
     console.log('Launching browser...');
     const browser = await puppeteer.launch({
+        executablePath: process.env.NODE_ENV === 'production'
+            ? process.env.PUPPETEER_EXECUTABLE_PATH
+            : puppeteer.executablePath(),
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'], // Required for restricted environments
     });
@@ -260,7 +263,7 @@ async function generateVideo(firstFramePath, lastFramePath, engine, prompt) {
 // Queue processing
 function processQueue() {
     if (requestQueue.length > 0) {
-        const { firstFramePath, lastFramePath,engine, prompt, res } = requestQueue[0]; // Get the first job without removing it
+        const { firstFramePath, lastFramePath, engine, prompt, res } = requestQueue[0]; // Get the first job without removing it
         generateVideo(firstFramePath, lastFramePath, engine, prompt)
             .then(videoSrc => {
                 res.json({ videoSrc });
