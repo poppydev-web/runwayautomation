@@ -2,7 +2,18 @@ const puppeteer = require('puppeteer');
 
 async function launchBrowser() {
     console.log('Launching browser...');
-    return await puppeteer.launch({ headless: false });
+    browser = await puppeteer.launch({
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu'
+        ],
+    });
+    page = await browser.newPage();
+    page.setDefaultTimeout(600000);
 }
 
 async function login(page) {

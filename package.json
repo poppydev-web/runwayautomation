@@ -4,7 +4,8 @@
   "description": "A Puppeteer-based automation for generating videos using RunwayML",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "install-chromium": "./install-chromium.sh"
   },
   "keywords": [],
   "author": "",

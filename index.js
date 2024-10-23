@@ -29,11 +29,20 @@ const upload = multer({ storage });
 
 async function launchBrowser() {
     console.log('Launching browser...');
-    browser = await puppeteer.launch({ headless: true });
+    browser = await puppeteer.launch({
+        headless: true,
+        executablePath: '/usr/bin/chromium',
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu'
+        ],
+    });
     page = await browser.newPage();
     page.setDefaultTimeout(600000);
 }
-
 async function login(page) {
     console.log('Navigating to login page...');
     await page.goto('https://app.runwayml.com/login');
