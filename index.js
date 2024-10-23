@@ -29,16 +29,9 @@ const upload = multer({ storage });
 
 async function launchBrowser() {
     console.log('Launching browser...');
-    browser = await puppeteer.launch({
+    const browser = await puppeteer.launch({
         headless: true,
-        executablePath: '/usr/bin/chromium',
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--disable-gpu'
-        ],
+        args: ['--no-sandbox', '--disable-setuid-sandbox'], // Required for restricted environments
     });
     page = await browser.newPage();
     page.setDefaultTimeout(600000);
