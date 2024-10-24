@@ -17,6 +17,35 @@ let isLoggedIn = false;
 let requestQueue = [];
 const videoDataFile = 'videoData.json';
 
+let idleStartTime = null; // To track when the queue became empty
+const idleTimeout = 300000; // 5 minutes in milliseconds
+const checkInterval = 5000; // Check every 5 seconds
+
+function checkQueuePeriodically() {
+    setInterval(async () => {
+        if (requestQueue.length === 0) {
+            if (!idleStartTime) {
+                // Record when the queue became empty
+                idleStartTime = Date.now();
+            } else if (Date.now() - idleStartTime >= idleTimeout) {
+                console.log('Queue has been empty for 5 minutes. Refreshing the page...');
+                
+                // Refresh the current page
+                if (page) {
+                    await page.reload({ waitUntil: 'networkidle2' });
+                    console.log('Page refreshed successfully');
+                }
+
+                // Reset the idle start time after refreshing
+                idleStartTime = null;
+            }
+        } else {
+            // Reset the idle start time if there are items in the queue
+            idleStartTime = null;
+        }
+    }, checkInterval);
+}
+
 // Multer setup for file uploads
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -260,8 +289,40 @@ async function changeModel(page, type) {
     console.log('Model changed!');
 }
 
+async function setDuration(page, duration) {
+    console.log('Finding the SVG element to click...');
+    
+    // Click the SVG element
+    await page.evaluate(() => {
+        const svgElement = document.querySelector('svg[xmlns="http://www.w3.org/2000/svg"]');
+        if (svgElement) {
+            svgElement.click();
+            console.log('SVG element clicked');
+        } else {
+            console.log('SVG element not found');
+        }
+    });
+
+    // Wait for the menu items to appear
+    console.log('Waiting for the duration menu to appear...');
+    await page.waitForSelector('div[role="menuitem"]', { visible: true });
+
+    // Click the menu item based on the specified duration
+    console.log(`Setting duration to ${duration} seconds...`);
+    await page.evaluate((duration) => {
+        const menuItem = Array.from(document.querySelectorAll('div[role="menuitem"]'))
+            .find(el => el.textContent.trim() === `${duration} seconds`);
+        if (menuItem) {
+            menuItem.click();
+            console.log(`Duration set to ${duration} seconds`);
+        } else {
+            console.log(`Menu item for ${duration} seconds not found`);
+        }
+    }, duration);
+}
+
 // Puppeteer logic in a function
-async function generateVideo(firstFramePath, lastFramePath, engine, prompt) {
+async function generateVideo(firstFramePath, lastFramePath, engine, prompt, duration) {
 
     // Navigate to the Generative Video tool (skipping login)
     // await navigateToGenerativeVideo(page);
@@ -272,10 +333,20 @@ async function generateVideo(firstFramePath, lastFramePath, engine, prompt) {
     console.log(firstFramePath, lastFramePath);
     await uploadFrame(page, 'input[type="file"]', firstFramePath);
     await clickCropButton(page);
-    await clickLastButton(page);
-    await uploadFrame(page, 'input[type="file"]', lastFramePath);
-    await clickCropButton(page);
+    if (lastFramePath) {
+        await clickLastButton(page);
+        await uploadFrame(page, 'input[type="file"]', lastFramePath);
+        await clickCropButton(page);
+    }
     await enterTextPrompt(page, prompt);
+
+    if(duration == '5'){
+        setDuration('5');
+    }
+    if(duration == '10' || !duration){
+        setDuration('10');
+    }
+
     await clickGenerateButton(page);
     const videoSrc = await waitForVideoAndLogSrc(page);
     console.log('All steps completed successfully!');
@@ -301,12 +372,11 @@ function loadVideoData() {
 // Queue processing
 function processQueue() {
     if (requestQueue.length > 0) {
-        const { firstFramePath, lastFramePath, engine, prompt, videoId, res } = requestQueue[0]; // Get the first job
-        generateVideo(firstFramePath, lastFramePath, engine, prompt)
+        const { firstFramePath, lastFramePath, engine, prompt, videoId, duration, res } = requestQueue[0]; // Get the first job
+        generateVideo(firstFramePath, lastFramePath, engine, prompt, duration)
             .then(videoSrc => {
                 // Save video ID and src to JSON file
                 saveVideoData(videoId, videoSrc);
-                res.json({ videoSrc }); // Return video ID to client
                 requestQueue.shift(); // Remove the job after completion
                 processQueue(); // Move to next request after completion
             })
@@ -331,11 +401,7 @@ function checkApiKey(req, res, next) {
 // API to handle video creation
 app.post('/create-video', checkApiKey, upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), async (req, res) => {
     if (isLoggedIn) {
-        const { firstFrame, lastFrame, engine, prompt } = req.body;
-
-        if (!firstFrame || !lastFrame || !engine || !prompt) {
-            return res.status(400).json({ error: 'Value missing: firstFrame, lastFrame, engine, and prompt are required.' });
-        }
+        const { firstFrame, lastFrame, engine, prompt, duration } = req.body;
 
         try {
             // Generate unique file names
@@ -344,17 +410,20 @@ app.post('/create-video', checkApiKey, upload.fields([{ name: 'firstFrame' }, { 
 
             // Paths where the files will be saved
             const firstFramePath = path.join(uploadDir, firstFrameName);
-            const lastFramePath = path.join(uploadDir, lastFrameName);
+            const lastFramePath = lastFrame ? path.join(uploadDir, lastFrameName) : null;
 
             // Download the files
             await downloadFile(firstFrame, firstFramePath); // firstFrame is the URL
-            await downloadFile(lastFrame, lastFramePath);   // lastFrame is the URL
+            if (lastFrame) {
+                await downloadFile(lastFrame, lastFramePath);   // lastFrame is the URL
+            }
 
             // Respond with video ID after files are downloaded
             const videoId = uuidv4(); // Generate a unique video ID
+            res.json({ videoId }); // Return video ID to client
 
             // Push the downloaded file paths into the request queue
-            requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, videoId, res });
+            requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, videoId, duration, res });
             console.log('Request length', requestQueue.length);
 
             // Start processing immediately if it's the only request
@@ -429,11 +498,12 @@ app.post('/reset-project', checkApiKey, async (req, res) => {
 app.listen(port, async () => {
     console.log(`Server is running on port ${port}`);
     if (!browser || !page) {
-          await launchBrowser();
+        await launchBrowser();
     }
 
     // Perform login if not already logged in
     if (!isLoggedIn) {
-         await login(page);
+        await login(page);
+        checkQueuePeriodically();
     }
 });
