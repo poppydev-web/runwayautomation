@@ -63,18 +63,39 @@ async function uploadFrame(page, inputSelector, filePath) {
 }
 
 async function clickCropButton(page) {
-    console.log('Waiting for image to appear...');
-    await page.waitForSelector('div.advanced-cropper-draggable-element.advanced-cropper-rectangle-stencil__draggable-area', { visible: true, timeout: 600000 });
-    console.log('Image appeared, clicking Crop button...');
-    await page.evaluate(() => {
-        const cropButton = Array.from(document.querySelectorAll('span')).find(el => el.textContent.trim() === 'Crop');
-        if (cropButton) {
-            cropButton.click();
-            console.log('Crop button clicked');
-        } else {
-            console.log('Crop button not found');
-        }
+    console.log('Checking periodically for the image to appear...');
+    const checkInterval = 500; // Interval in milliseconds to check
+    const maxAttempts = 2000; // Maximum number of attempts
+    let attempts = 0;
+
+    const elementAppeared = await new Promise((resolve) => {
+        const interval = setInterval(async () => {
+            const element = await page.$('div.advanced-cropper-draggable-element.advanced-cropper-rectangle-stencil__draggable-area');
+            if (element) {
+                clearInterval(interval);
+                resolve(true);
+            } else if (attempts >= maxAttempts) {
+                clearInterval(interval);
+                resolve(false);
+            }
+            attempts++;
+        }, checkInterval);
     });
+
+    if (elementAppeared) {
+        console.log('Image appeared, clicking Crop button...');
+        await page.evaluate(() => {
+            const cropButton = Array.from(document.querySelectorAll('span')).find(el => el.textContent.trim() === 'Crop');
+            if (cropButton) {
+                cropButton.click();
+                console.log('Crop button clicked');
+            } else {
+                console.log('Crop button not found');
+            }
+        });
+    } else {
+        console.log('Image did not appear within the specified time.');
+    }
 }
 
 async function clickLastButton(page) {
