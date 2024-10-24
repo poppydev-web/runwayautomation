@@ -419,6 +419,8 @@ app.post('/create-video', checkApiKey, upload.fields([{ name: 'firstFrame' }, { 
             const videoId = uuidv4(); // Generate a unique video ID
             res.json({ videoId }); // Return video ID to client
 
+            saveVideoData(videoId, "Not Ready.");
+
             // Push the downloaded file paths into the request queue
             requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, videoId, duration, res });
             console.log('Request length', requestQueue.length);
@@ -461,6 +463,10 @@ app.post('/get-video/:id', checkApiKey, (req, res) => {
     if (isLoggedIn) {
         const videoId = req.params.id;
         const videoData = loadVideoData();
+
+        if(videoData[videoId] == 'Not Ready.'){            
+            res.status(404).json({ error: 'Not Ready.' });
+        }
 
         if (videoData[videoId]) {
             res.json({ videoSrc: videoData[videoId] });
