@@ -293,17 +293,18 @@ async function setDuration(page, duration) {
     console.log('Finding the SVG element to click...');
 
     // Click the SVG element
-    await page.waitForSelector('button[id^="radix-"]', { visible: true });
+    await page.waitForSelector('div.Base__Box-sc-thne2y-0.fKrQYu', { visible: true });
 
     await page.evaluate(() => {
-        const button = document.querySelector('button[id^="radix-"]');
-        if (button) {
-            button.click();
-            console.log('Button with ID starting with "radix-" clicked');
+        const divElement = document.querySelector('div.Base__Box-sc-thne2y-0.fKrQYu');
+        if (divElement) {
+            divElement.click();
+            console.log('Div element with the specified classes clicked');
         } else {
-            console.log('Button with ID starting with "radix-" not found');
+            console.log('Div element with the specified classes not found');
         }
     });
+
 
 
     // Wait for the menu items to appear
