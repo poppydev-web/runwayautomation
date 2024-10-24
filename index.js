@@ -29,7 +29,7 @@ function checkQueuePeriodically() {
                 idleStartTime = Date.now();
             } else if (Date.now() - idleStartTime >= idleTimeout) {
                 console.log('Queue has been empty for 5 minutes. Refreshing the page...');
-                
+
                 // Refresh the current page
                 if (page) {
                     await page.reload({ waitUntil: 'networkidle2' });
@@ -291,16 +291,17 @@ async function changeModel(page, type) {
 
 async function setDuration(page, duration) {
     console.log('Finding the SVG element to click...');
-    
+
     // Click the SVG element
-    await page.waitForSelector('svg[xmlns="http://www.w3.org/2000/svg"]', { visible: true });
+    await page.waitForSelector('button:has(svg[xmlns="http://www.w3.org/2000/svg"])', { visible: true });
+
     await page.evaluate(() => {
-        const svgElement = document.querySelector('svg[xmlns="http://www.w3.org/2000/svg"]');
-        if (svgElement) {
-            svgElement.click();
-            console.log('SVG element clicked');
+        const button = document.querySelector('button:has(svg[xmlns="http://www.w3.org/2000/svg"])');
+        if (button) {
+            button.click();
+            console.log('Button containing the SVG clicked');
         } else {
-            console.log('SVG element not found');
+            console.log('Button containing the SVG not found');
         }
     });
 
@@ -341,10 +342,10 @@ async function generateVideo(firstFramePath, lastFramePath, engine, prompt, dura
     }
     await enterTextPrompt(page, prompt);
 
-    if(duration == '5'){
+    if (duration == '5') {
         setDuration(page, '5');
     }
-    if(duration == '10' || !duration){
+    if (duration == '10' || !duration) {
         setDuration(page, '10');
     }
 
@@ -475,7 +476,7 @@ app.post('/get-video/:id', checkApiKey, (req, res) => {
 });
 
 app.post('/get-all-video', checkApiKey, (req, res) => {
-    if (isLoggedIn) {        
+    if (isLoggedIn) {
         const videoData = loadVideoData();
         res.json({ ...videoData });
     }
