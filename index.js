@@ -333,6 +333,10 @@ app.post('/create-video', checkApiKey, upload.fields([{ name: 'firstFrame' }, { 
     if (isLoggedIn) {
         const { firstFrame, lastFrame, engine, prompt } = req.body;
 
+        if (!firstFrame || !lastFrame || !engine || !prompt) {
+            return res.status(400).json({ error: 'Value missing: firstFrame, lastFrame, engine, and prompt are required.' });
+        }
+
         try {
             // Generate unique file names
             const firstFrameName = `${uuidv4()}.png`; // Assuming PNG, change as needed
