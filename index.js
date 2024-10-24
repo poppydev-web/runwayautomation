@@ -294,8 +294,7 @@ async function setDuration(page, duration) {
 
     // Click the SVG element
     await page.waitForSelector('button:has(svg[xmlns="http://www.w3.org/2000/svg"])', { visible: true });
-    const button = document.querySelector('button:has(svg[xmlns="http://www.w3.org/2000/svg"])');
-    button.click();
+    await page.click('button:has(svg[xmlns="http://www.w3.org/2000/svg"])');
 
     // await page.evaluate(() => {
     //     const button = document.querySelector('button:has(svg[xmlns="http://www.w3.org/2000/svg"])');
