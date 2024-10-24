@@ -4,6 +4,8 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const uploadDir = path.join(__dirname, 'uploads');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 require('dotenv').config();
 
 const app = express();
@@ -33,8 +35,8 @@ const upload = multer({ storage });
 async function launchBrowser() {
     console.log('Launching browser...');
     const browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process', '--no-zygote'], // Required for restricted environments
+        headless: false,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'], // Required for restricted environments
     });
     page = await browser.newPage();
     page.setDefaultTimeout(600000);
@@ -326,20 +328,64 @@ function checkApiKey(req, res, next) {
 }
 
 // API to handle video creation
-app.post('/create-video', checkApiKey, upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), (req, res) => {
+app.post('/create-video', checkApiKey, upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), async (req, res) => {
     if (isLoggedIn) {
-        const { engine, prompt } = req.body;
-        const firstFramePath = req.files['firstFrame'][0].path;
-        const lastFramePath = req.files['lastFrame'][0].path;
-        const videoId = uuidv4(); // Generate a unique video ID
-        res.json({ videoId }); // Return video ID to client
-        requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, videoId, res });
-        console.log('Request length', requestQueue.length);
-        if (requestQueue.length === 1) {
-            processQueue(); // Start processing immediately if it's the only request
+        const { firstFrame, lastFrame, engine, prompt } = req.body;
+
+        try {
+            // Generate unique file names
+            const firstFrameName = `${uuidv4()}.png`; // Assuming PNG, change as needed
+            const lastFrameName = `${uuidv4()}.png`;
+
+            // Paths where the files will be saved
+            const firstFramePath = path.join(uploadDir, firstFrameName);
+            const lastFramePath = path.join(uploadDir, lastFrameName);
+
+            // Download the files
+            await downloadFile(firstFrame, firstFramePath); // firstFrame is the URL
+            await downloadFile(lastFrame, lastFramePath);   // lastFrame is the URL
+
+            // Respond with video ID after files are downloaded
+            const videoId = uuidv4(); // Generate a unique video ID
+            res.json({ videoId }); // Return video ID to client
+
+            // Push the downloaded file paths into the request queue
+            requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, videoId, res });
+            console.log('Request length', requestQueue.length);
+
+            // Start processing immediately if it's the only request
+            if (requestQueue.length === 1) {
+                processQueue();
+            }
+
+        } catch (error) {
+            console.error('Error downloading files:', error);
+            res.status(500).json({ error: 'Failed to download files' });
         }
+    } else {
+        res.status(403).json({ error: 'User not authenticated' });
     }
 });
+
+// Function to download a file from a URL and save it locally
+async function downloadFile(url, filePath) {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
+    }
+
+    const fileStream = fs.createWriteStream(filePath);
+    return new Promise((resolve, reject) => {
+        response.body.pipe(fileStream);
+        response.body.on('error', (err) => {
+            reject(err);
+        });
+        fileStream.on('finish', () => {
+            resolve();
+        });
+    });
+}
 
 app.post('/get-video/:id', checkApiKey, (req, res) => {
     if (isLoggedIn) {
@@ -379,11 +425,11 @@ app.post('/reset-project', checkApiKey, async (req, res) => {
 app.listen(port, async () => {
     console.log(`Server is running on port ${port}`);
     if (!browser || !page) {
-        await launchBrowser();
+          await launchBrowser();
     }
 
     // Perform login if not already logged in
     if (!isLoggedIn) {
-        await login(page);
+         await login(page);
     }
 });
