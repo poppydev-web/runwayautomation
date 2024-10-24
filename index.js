@@ -30,7 +30,7 @@ const upload = multer({ storage });
 async function launchBrowser() {
     console.log('Launching browser...');
     const browser = await puppeteer.launch({
-        headless: true,
+        headless: false,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process', '--no-zygote'], // Required for restricted environments
     });
     page = await browser.newPage();
