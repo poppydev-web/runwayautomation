@@ -293,17 +293,10 @@ async function setDuration(page, duration) {
     console.log('Finding the SVG element to click...');
 
     // Click the SVG element
-    await page.waitForSelector('div.Base__Box-sc-thne2y-0.fKrQYu', { visible: true });
+    await page.waitForSelector('div[class^="Base__Box-sc-thne2y-0"][class*="fKrQYu"]', { visible: true });
+    console.log('Clicking the specified div element...');
+    await page.click('div[class^="Base__Box-sc-thne2y-0"][class*="fKrQYu"]');
 
-    await page.evaluate(() => {
-        const divElement = document.querySelector('div.Base__Box-sc-thne2y-0.fKrQYu');
-        if (divElement) {
-            divElement.click();
-            console.log('Div element with the specified classes clicked');
-        } else {
-            console.log('Div element with the specified classes not found');
-        }
-    });
 
 
 
