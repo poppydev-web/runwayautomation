@@ -293,17 +293,18 @@ async function setDuration(page, duration) {
     console.log('Finding the SVG element to click...');
 
     // Click the SVG element
-    await page.waitForSelector('button#radix-12', { visible: true });
+    await page.waitForSelector('button[id^="radix-"]', { visible: true });
 
     await page.evaluate(() => {
-        const button = document.querySelector('button#radix-12');
+        const button = document.querySelector('button[id^="radix-"]');
         if (button) {
             button.click();
-            console.log('Button with ID "radix-12" clicked');
+            console.log('Button with ID starting with "radix-" clicked');
         } else {
-            console.log('Button with ID "radix-12" not found');
+            console.log('Button with ID starting with "radix-" not found');
         }
     });
+
 
     // Wait for the menu items to appear
     console.log('Waiting for the duration menu to appear...');
