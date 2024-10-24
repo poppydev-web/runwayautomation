@@ -294,16 +294,18 @@ async function setDuration(page, duration) {
 
     // Click the SVG element
     await page.waitForSelector('button:has(svg[xmlns="http://www.w3.org/2000/svg"])', { visible: true });
+    const button = document.querySelector('button:has(svg[xmlns="http://www.w3.org/2000/svg"])');
+    button.click();
 
-    await page.evaluate(() => {
-        const button = document.querySelector('button:has(svg[xmlns="http://www.w3.org/2000/svg"])');
-        if (button) {
-            button.click();
-            console.log('Button containing the SVG clicked');
-        } else {
-            console.log('Button containing the SVG not found');
-        }
-    });
+    // await page.evaluate(() => {
+    //     const button = document.querySelector('button:has(svg[xmlns="http://www.w3.org/2000/svg"])');
+    //     if (button) {
+    //         button.click();
+    //         console.log('Button containing the SVG clicked');
+    //     } else {
+    //         console.log('Button containing the SVG not found');
+    //     }
+    // });
 
     // Wait for the menu items to appear
     console.log('Waiting for the duration menu to appear...');
