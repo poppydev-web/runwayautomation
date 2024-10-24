@@ -341,10 +341,10 @@ async function generateVideo(firstFramePath, lastFramePath, engine, prompt, dura
     await enterTextPrompt(page, prompt);
 
     if(duration == '5'){
-        setDuration('5');
+        setDuration(page, '5');
     }
     if(duration == '10' || !duration){
-        setDuration('10');
+        setDuration(page, '10');
     }
 
     await clickGenerateButton(page);
@@ -470,6 +470,13 @@ app.post('/get-video/:id', checkApiKey, (req, res) => {
         } else {
             res.status(404).json({ error: 'Video not found' });
         }
+    }
+});
+
+app.post('/get-all-video', checkApiKey, (req, res) => {
+    if (isLoggedIn) {        
+        const videoData = loadVideoData();
+        res.json({ ...videoData });
     }
 });
 
