@@ -467,8 +467,7 @@ app.post('/get-video/:id', checkApiKey, (req, res) => {
         if(videoData[videoId] == 'Not Ready.'){            
             res.status(404).json({ error: 'Not Ready.' });
         }
-
-        if (videoData[videoId]) {
+        else if (videoData[videoId]) {
             res.json({ videoSrc: videoData[videoId] });
         } else {
             res.status(404).json({ error: 'Video not found' });
