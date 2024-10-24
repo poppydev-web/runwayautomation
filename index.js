@@ -293,6 +293,7 @@ async function setDuration(page, duration) {
     console.log('Finding the SVG element to click...');
     
     // Click the SVG element
+    await page.waitForSelector('svg[xmlns="http://www.w3.org/2000/svg"]', { visible: true });
     await page.evaluate(() => {
         const svgElement = document.querySelector('svg[xmlns="http://www.w3.org/2000/svg"]');
         if (svgElement) {
