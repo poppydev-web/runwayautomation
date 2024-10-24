@@ -306,48 +306,51 @@ function checkApiKey(req, res, next) {
 
 // API to handle video creation
 app.post('/create-video', checkApiKey, upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), (req, res) => {
-    const { engine, prompt } = req.body;
-    const firstFramePath = req.files['firstFrame'][0].path;
-    const lastFramePath = req.files['lastFrame'][0].path;
-    const videoId = uuidv4(); // Generate a unique video ID
-    res.json({ videoId }); // Return video ID to client
-    requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, videoId, res });
-    console.log('Request length', requestQueue.length);
-    if (requestQueue.length === 1) {
-        processQueue(); // Start processing immediately if it's the only request
+    if (isLoggedIn) {
+        const { engine, prompt } = req.body;
+        const firstFramePath = req.files['firstFrame'][0].path;
+        const lastFramePath = req.files['lastFrame'][0].path;
+        const videoId = uuidv4(); // Generate a unique video ID
+        res.json({ videoId }); // Return video ID to client
+        requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, videoId, res });
+        console.log('Request length', requestQueue.length);
+        if (requestQueue.length === 1) {
+            processQueue(); // Start processing immediately if it's the only request
+        }
     }
 });
 
 app.post('/get-video/:id', checkApiKey, (req, res) => {
-    const videoId = req.params.id;
-    const videoData = loadVideoData();
-    
-    if (videoData[videoId]) {
-        res.json({ videoSrc: videoData[videoId] });
-    } else {
-        res.status(404).json({ error: 'Video not found' });
+    if (isLoggedIn) {
+        const videoId = req.params.id;
+        const videoData = loadVideoData();
+
+        if (videoData[videoId]) {
+            res.json({ videoSrc: videoData[videoId] });
+        } else {
+            res.status(404).json({ error: 'Video not found' });
+        }
     }
 });
 
 // New endpoint to reset the project
 app.post('/reset-project', checkApiKey, async (req, res) => {
-    try {
-        // Close browser if open
-        if (browser) {
-            console.log('Closing browser...');
-            await browser.close();
-            browser = null;
-            page = null;
-            isLoggedIn = false;
-        }
+    if (isLoggedIn) {
+        try {
+            // Close browser if open
+            if (browser) {
+                console.log('Closing browser...');
+                isLoggedIn = false;
+            }
 
-        // Clear the request queue
-        requestQueue = [];
-        console.log('Request queue cleared.');
-        res.json({ message: 'Project reset successfully' });
-    } catch (error) {
-        console.error('Error resetting project:', error);
-        res.status(500).json({ error: 'Failed to reset project' });
+            // Clear the request queue
+            requestQueue = [];
+            console.log('Request queue cleared.');
+            res.json({ message: 'Project reset successfully' });
+        } catch (error) {
+            console.error('Error resetting project:', error);
+            res.status(500).json({ error: 'Failed to reset project' });
+        }
     }
 });
 
