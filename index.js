@@ -343,10 +343,10 @@ async function generateVideo(firstFramePath, lastFramePath, engine, prompt, dura
     await enterTextPrompt(page, prompt);
 
     if (duration == '5') {
-        setDuration(page, '5');
+        await setDuration(page, '5');
     }
     if (duration == '10' || !duration) {
-        setDuration(page, '10');
+        await setDuration(page, '10');
     }
 
     await clickGenerateButton(page);
