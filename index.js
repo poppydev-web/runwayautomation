@@ -2,6 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const puppeteer = require('puppeteer');
 const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 const app = express();
@@ -11,6 +13,7 @@ let browser = null;
 let page = null;
 let isLoggedIn = false;
 let requestQueue = [];
+const videoDataFile = 'videoData.json';
 
 // Multer setup for file uploads
 const storage = multer.diskStorage({
@@ -257,13 +260,29 @@ async function generateVideo(firstFramePath, lastFramePath, engine, prompt) {
     return videoSrc;
 }
 
+// Function to save video data to JSON file
+function saveVideoData(videoId, videoSrc) {
+    const videoData = loadVideoData();
+    videoData[videoId] = videoSrc; // Associate video ID with its source
+    fs.writeFileSync(videoDataFile, JSON.stringify(videoData, null, 2)); // Write to file
+}
+
+function loadVideoData() {
+    if (!fs.existsSync(videoDataFile)) {
+        return {}; // Return empty object if file doesn't exist
+    }
+    const data = fs.readFileSync(videoDataFile);
+    return JSON.parse(data);
+}
+
 // Queue processing
 function processQueue() {
     if (requestQueue.length > 0) {
-        const { firstFramePath, lastFramePath, engine, prompt, res } = requestQueue[0]; // Get the first job without removing it
+        const { firstFramePath, lastFramePath, engine, prompt, videoId, res } = requestQueue[0]; // Get the first job
         generateVideo(firstFramePath, lastFramePath, engine, prompt)
             .then(videoSrc => {
-                res.json({ videoSrc });
+                // Save video ID and src to JSON file
+                saveVideoData(videoId, videoSrc);
                 requestQueue.shift(); // Remove the job after completion
                 processQueue(); // Move to next request after completion
             })
@@ -276,22 +295,42 @@ function processQueue() {
     }
 }
 
+function checkApiKey(req, res, next) {
+    const apiKey = req.headers['x-api-key'];
+    if (apiKey && apiKey === process.env.SECRET_KEY) {
+        next(); // Proceed to the next middleware or route handler
+    } else {
+        res.status(403).json({ error: 'Authentication failed. Invalid API key.' }); // Send authentication error
+    }
+}
 
 // API to handle video creation
-app.post('/create-video', upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), (req, res) => {
+app.post('/create-video', checkApiKey, upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), (req, res) => {
     const { engine, prompt } = req.body;
     const firstFramePath = req.files['firstFrame'][0].path;
     const lastFramePath = req.files['lastFrame'][0].path;
-
-    requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, res });
-    console.log('requestlength', requestQueue.length);
+    const videoId = uuidv4(); // Generate a unique video ID
+    res.json({ videoId }); // Return video ID to client
+    requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, videoId, res });
+    console.log('Request length', requestQueue.length);
     if (requestQueue.length === 1) {
         processQueue(); // Start processing immediately if it's the only request
     }
 });
 
+app.post('/get-video/:id', checkApiKey, (req, res) => {
+    const videoId = req.params.id;
+    const videoData = loadVideoData();
+    
+    if (videoData[videoId]) {
+        res.json({ videoSrc: videoData[videoId] });
+    } else {
+        res.status(404).json({ error: 'Video not found' });
+    }
+});
+
 // New endpoint to reset the project
-app.post('/reset-project', async (req, res) => {
+app.post('/reset-project', checkApiKey, async (req, res) => {
     try {
         // Close browser if open
         if (browser) {
