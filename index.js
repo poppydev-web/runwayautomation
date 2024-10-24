@@ -306,6 +306,7 @@ function processQueue() {
             .then(videoSrc => {
                 // Save video ID and src to JSON file
                 saveVideoData(videoId, videoSrc);
+                res.json({ videoSrc }); // Return video ID to client
                 requestQueue.shift(); // Remove the job after completion
                 processQueue(); // Move to next request after completion
             })
@@ -347,7 +348,6 @@ app.post('/create-video', checkApiKey, upload.fields([{ name: 'firstFrame' }, { 
 
             // Respond with video ID after files are downloaded
             const videoId = uuidv4(); // Generate a unique video ID
-            res.json({ videoId }); // Return video ID to client
 
             // Push the downloaded file paths into the request queue
             requestQueue.push({ firstFramePath, lastFramePath, engine, prompt, videoId, res });
