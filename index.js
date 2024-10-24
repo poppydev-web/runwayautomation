@@ -279,7 +279,6 @@ function processQueue() {
 
 // API to handle video creation
 app.post('/create-video', upload.fields([{ name: 'firstFrame' }, { name: 'lastFrame' }]), (req, res) => {
-    console.log('adfadf');
     const { engine, prompt } = req.body;
     const firstFramePath = req.files['firstFrame'][0].path;
     const lastFramePath = req.files['lastFrame'][0].path;
@@ -314,14 +313,14 @@ app.post('/reset-project', async (req, res) => {
 });
 
 // Start the server
-app.listen(port,'0.0.0.0', async () => {
+app.listen(port, async () => {
     console.log(`Server is running on port ${port}`);
     if (!browser || !page) {
-   //     await launchBrowser();
+        await launchBrowser();
     }
 
     // Perform login if not already logged in
     if (!isLoggedIn) {
-    //    await login(page);
+        await login(page);
     }
 });
