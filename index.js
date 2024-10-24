@@ -465,7 +465,7 @@ app.post('/get-video/:id', checkApiKey, (req, res) => {
         const videoData = loadVideoData();
 
         if(videoData[videoId] == 'Not Ready.'){            
-            res.status(404).json({ error: 'Not Ready.' });
+            res.json({ videoSrc:  'not_ready'});
         }
         else if (videoData[videoId]) {
             res.json({ videoSrc: videoData[videoId] });
