@@ -64,7 +64,7 @@ async function uploadFrame(page, inputSelector, filePath) {
 
 async function clickCropButton(page) {
     console.log('Waiting for image to appear...');
-    await page.waitForSelector('div.advanced-cropper-draggable-element.advanced-cropper-rectangle-stencil__draggable-area', { visible: true });
+    await page.waitForSelector('div.advanced-cropper-draggable-element.advanced-cropper-rectangle-stencil__draggable-area', { visible: true, timeout: 600000 });
     console.log('Image appeared, clicking Crop button...');
     await page.evaluate(() => {
         const cropButton = Array.from(document.querySelectorAll('span')).find(el => el.textContent.trim() === 'Crop');
